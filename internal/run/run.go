@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mepuka/codex-cloud-shim/internal/cloud"
+	"github.com/mepuka/codex-cloud-shim/internal/envcheck"
 	"github.com/mepuka/codex-cloud-shim/internal/gitctx"
 	"github.com/mepuka/codex-cloud-shim/internal/protocol"
 	"github.com/mepuka/codex-cloud-shim/internal/state"
@@ -397,7 +398,12 @@ func (r *runner) submit(ctx context.Context, submitPrompt, hash string) *failure
 			return nil // CANCEL surfaces in the caller
 		}
 		if errors.Is(err, cloud.ErrEnvNotFound) {
-			return failf(codeEnvNotFound, "", "%v", err) // F4a verbatim, fail fast
+			// F4a: upstream text verbatim, plus the one fix that exists —
+			// creation has no API, so point at the web UI and the check
+			// command instead of leaving a mystery failure.
+			return failf(codeEnvNotFound, "",
+				"%v\nNo Codex Cloud environment is attached to this repo. Create one (defaults are fine) at %s, then verify with `codex-cloud-shim env check %s`. This is a one-time step per repo.",
+				err, envcheck.CreateURL, r.env)
 		}
 		// Orphan reconcile: the exec may have died after submitting. No
 		// candidate can be positively identified as ours — the env label

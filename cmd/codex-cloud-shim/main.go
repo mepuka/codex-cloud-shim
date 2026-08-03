@@ -44,6 +44,11 @@ func main() {
 }
 
 func realMain() int {
+	// Operator subcommands run before the claude-argv path: the daemon never
+	// passes a bare positional first argument, so this cannot collide.
+	if len(os.Args) > 1 && os.Args[1] == "env" {
+		return envCommand(os.Args[2:])
+	}
 	args, err := protocol.ParseArgs(os.Args[1:])
 	if err != nil {
 		// F0 before anything else could happen: emit the error result on
