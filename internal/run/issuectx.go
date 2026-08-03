@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -152,6 +153,36 @@ func (r *runner) captureSubmittedPrompt(framed string) {
 		return
 	}
 	r.log("info", fmt.Sprintf("submitting %d bytes (capture: %s)", len(framed), path))
+
+	// Exec-context capture, same postmortem motivation: the live prompt was
+	// proven innocent by replaying it verbatim outside the daemon (probes
+	// 2026-08-03, +12/-0) while in-daemon submissions returned empty diffs,
+	// leaving the inherited environment and binary resolution as the only
+	// unexcluded inputs. Never values wholesale — the daemon env carries
+	// task tokens; variable NAMES only, plus values for the short allowlist
+	// that steers CLI behavior and is not a credential.
+	var b strings.Builder
+	if p, err := exec.LookPath(r.s.codexBin); err == nil {
+		fmt.Fprintf(&b, "codex binary: %s\n\n", p)
+	} else {
+		fmt.Fprintf(&b, "codex binary: LookPath(%s): %v\n\n", r.s.codexBin, err)
+	}
+	valueAllowlist := map[string]bool{"PATH": true, "CODEX_HOME": true,
+		"HOME": true, "USERPROFILE": true, "CODEX_CLOUD_SHIM_CODEX_BIN": true}
+	env := os.Environ()
+	sort.Strings(env)
+	for _, kv := range env {
+		name, val, _ := strings.Cut(kv, "=")
+		if valueAllowlist[name] {
+			fmt.Fprintf(&b, "%s=%s\n", name, val)
+		} else {
+			fmt.Fprintf(&b, "%s\n", name)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(r.workdirRoot, "codex-cloud-shim.exec-context.txt"),
+		[]byte(b.String()), 0o600); err != nil {
+		r.log("warn", fmt.Sprintf("exec-context capture failed: %v", err))
+	}
 }
 
 // closeOwnership moves the dispatching issue to in_review after a successful
