@@ -1,0 +1,41 @@
+[2026-08-03T15:35:05.025322+00:00] startup: base_url=https://chatgpt.com/backend-api path_style=wham
+[2026-08-03T15:35:05.026346+00:00] auth: mode=ChatGPT account_id=c2f4bc67-967a-4337-824a-26046ec1253f
+[2026-08-03T15:35:05.027019+00:00] auth: set ChatGPT-Account-Id header: c2f4bc67-967a-4337-824a-26046ec1253f
+[2026-08-03T15:35:06.596794+00:00] startup: base_url=https://chatgpt.com/backend-api path_style=wham
+[2026-08-03T15:35:06.596907+00:00] auth: mode=ChatGPT account_id=c2f4bc67-967a-4337-824a-26046ec1253f
+[2026-08-03T15:35:06.597129+00:00] auth: set ChatGPT-Account-Id header: c2f4bc67-967a-4337-824a-26046ec1253f
+[2026-08-03T15:35:08.140352+00:00] startup: base_url=https://chatgpt.com/backend-api path_style=wham
+[2026-08-03T15:35:08.140491+00:00] auth: mode=ChatGPT account_id=c2f4bc67-967a-4337-824a-26046ec1253f
+[2026-08-03T15:35:08.140723+00:00] auth: set ChatGPT-Account-Id header: c2f4bc67-967a-4337-824a-26046ec1253f
+[2026-08-03T15:35:09.498738+00:00] apply_result: mode=apply id=task_e_6a70b48f64648323bba8af2747578941 status=Error applied=0 skipped=1 conflicts=0 cmd=(cd /private/tmp/claude-501/-Users-pooks-Dev-tailtalk/a80a4364-ec69-48d6-beb9-1a86fcee9890/scratchpad/applytest && git apply --3way /var/folders/_2/d22zd5lj2_v9xrps05xl2sr80000gn/T/.tmpIRfzpn/patch.diff)
+stdout_tail=
+
+stderr_tail=
+Performing three-way merge...
+error: docs/PROBE.md: does not match index
+error: cannot read the current contents of 'docs/PROBE.md'
+error: docs/PROBE.md: patch does not apply
+
+patch_summary: kind=git-diff lines=9 chars=308 cwd=/private/tmp/claude-501/-Users-pooks-Dev-tailtalk/a80a4364-ec69-48d6-beb9-1a86fcee9890/scratchpad/applytest ; head=
+diff --git a/docs/PROBE.md b/docs/PROBE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..43c43b917fb777e095b402c0b97d8ea5d52ffe44
+--- /dev/null
++++ b/docs/PROBE.md
+@@ -0,0 +1,3 @@
++2026-08-03
++
++This repository provides a Claude Code-compatible CLI shim for running Codex Cloud tasks.
+----- PATCH BEGIN -----
+diff --git a/docs/PROBE.md b/docs/PROBE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..43c43b917fb777e095b402c0b97d8ea5d52ffe44
+--- /dev/null
++++ b/docs/PROBE.md
+@@ -0,0 +1,3 @@
++2026-08-03
++
++This repository provides a Claude Code-compatible CLI shim for running Codex Cloud tasks.
+
+----- PATCH END -----
+

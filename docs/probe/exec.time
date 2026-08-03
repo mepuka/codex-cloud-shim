@@ -1,0 +1,2 @@
+codex cloud exec --env "mepuka/codex-cloud-shim" --branch main  >  2>   0.07s user 0.06s system 3% cpu 3.431 total
+exec_exit=0
