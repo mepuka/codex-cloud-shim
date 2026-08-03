@@ -178,7 +178,7 @@ func TestEnsureWorktreeNoResourcesExplains(t *testing.T) {
 
 func TestFramedPromptWrapsByDefaultAndOffIsVerbatim(t *testing.T) {
 	r := &runner{s: &settings{frame: frameCloud}, env: "mepuka/tailtalk", branch: "main"}
-	framed := r.framedPrompt("Fix the bug in foo.go")
+	framed := r.framedPrompt("", "Fix the bug in foo.go")
 	if !strings.HasSuffix(framed, "--- task ---\n\nFix the bug in foo.go") {
 		t.Errorf("raw prompt must close the framed text verbatim, got tail %q", framed[max(0, len(framed)-60):])
 	}
@@ -188,9 +188,113 @@ func TestFramedPromptWrapsByDefaultAndOffIsVerbatim(t *testing.T) {
 		}
 	}
 
+	withIssue := r.framedPrompt("The dispatched work item (issue DEV-87):\n\nTitle: T", "dispatch text")
+	for _, want := range []string{"issue DEV-87", "provenance only", "dispatch text"} {
+		if !strings.Contains(withIssue, want) {
+			t.Errorf("issue-framed prompt missing %q", want)
+		}
+	}
+	if strings.Index(withIssue, "issue DEV-87") > strings.Index(withIssue, "dispatch text") {
+		t.Error("issue block must lead the dispatch message")
+	}
+
 	r.s.frame = frameOff
-	if got := r.framedPrompt("Fix the bug in foo.go"); got != "Fix the bug in foo.go" {
+	if got := r.framedPrompt("", "Fix the bug in foo.go"); got != "Fix the bug in foo.go" {
 		t.Errorf("frame off must submit verbatim, got %q", got)
+	}
+}
+
+func writeTaskContext(t *testing.T, root, issueID string) {
+	t.Helper()
+	dir := filepath.Join(root, ".multica")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"managed_by":"multica-daemon-task","agent_id":"a","issue_id":"` + issueID + `"}`
+	if err := os.WriteFile(filepath.Join(dir, "daemon_task_context.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIssueIDSidecarBeatsPromptLine(t *testing.T) {
+	wd := t.TempDir()
+	r := &runner{workdirRoot: wd,
+		prompt: "Your assigned issue ID is: 99999999-9999-4999-8999-999999999999\n"}
+	if got := r.issueID(); got != "99999999-9999-4999-8999-999999999999" {
+		t.Errorf("prompt-line fallback failed, got %q", got)
+	}
+	writeTaskContext(t, wd, "d64774f1-709f-4dee-b3de-0856e46dfdd4")
+	if got := r.issueID(); got != "d64774f1-709f-4dee-b3de-0856e46dfdd4" {
+		t.Errorf("sidecar must win, got %q", got)
+	}
+	// CWD already the checkout: sidecar one level up is still found.
+	r2 := &runner{workdirRoot: filepath.Join(wd, "repo"), prompt: "no id here"}
+	if got := r2.issueID(); got != "d64774f1-709f-4dee-b3de-0856e46dfdd4" {
+		t.Errorf("parent sidecar lookup failed, got %q", got)
+	}
+}
+
+func fakeMultica(t *testing.T, script string) func(string) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "multica")
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return func(k string) string {
+		if k == "CODEX_CLOUD_SHIM_MULTICA_BIN" {
+			return bin
+		}
+		return ""
+	}
+}
+
+func TestIssueContextOwnershipFailsClosed(t *testing.T) {
+	wd := t.TempDir()
+	// No sidecar, no id line: ownership turn must fail rather than submit
+	// a contentless prompt.
+	r := &runner{workdirRoot: wd, s: &settings{frame: frameCloud},
+		em:     protocol.NewEmitter(io.Discard),
+		prompt: "**Turn mode: Ownership.** etc", cfg: Config{Getenv: func(string) string { return "" }}}
+	if _, f := r.issueContext(context.Background()); f == nil || !strings.Contains(f.msg, codeIssueContext) {
+		t.Fatalf("want F13 on ownership without issue id, got %+v", f)
+	}
+
+	// Id present but the fetch fails: still fail closed on ownership...
+	writeTaskContext(t, wd, "d64774f1-709f-4dee-b3de-0856e46dfdd4")
+	r.cfg.Getenv = fakeMultica(t, "#!/bin/sh\nexit 1\n")
+	if _, f := r.issueContext(context.Background()); f == nil || !strings.Contains(f.msg, codeIssueContext) {
+		t.Fatalf("want F13 on ownership fetch failure, got %+v", f)
+	}
+
+	// ...but degrade with a warning on a reply turn.
+	r.prompt = "**Turn mode: Reply.**\n> the comment"
+	if block, f := r.issueContext(context.Background()); f != nil || block != "" {
+		t.Fatalf("reply turn must degrade, got block=%q f=%+v", block, f)
+	}
+}
+
+func TestIssueContextFetchesAndRenders(t *testing.T) {
+	wd := t.TempDir()
+	writeTaskContext(t, wd, "d64774f1-709f-4dee-b3de-0856e46dfdd4")
+	r := &runner{workdirRoot: wd, s: &settings{frame: frameCloud},
+		em:     protocol.NewEmitter(io.Discard),
+		prompt: "**Turn mode: Ownership.** etc",
+		cfg: Config{Getenv: fakeMultica(t,
+			"#!/bin/sh\necho '{\"identifier\":\"DEV-87\",\"title\":\"Add CHANGELOG.md\",\"description\":\"Create a CHANGELOG.\"}'\n")}}
+	block, f := r.issueContext(context.Background())
+	if f != nil {
+		t.Fatalf("issueContext failed: %+v", f)
+	}
+	for _, want := range []string{"issue DEV-87", "Title: Add CHANGELOG.md", "Create a CHANGELOG."} {
+		if !strings.Contains(block, want) {
+			t.Errorf("block missing %q in %q", want, block)
+		}
+	}
+
+	// frame off: no fetch, no block.
+	r.s.frame = frameOff
+	if block, f := r.issueContext(context.Background()); f != nil || block != "" {
+		t.Fatalf("frame off must skip issue context, got %q %+v", block, f)
 	}
 }
 

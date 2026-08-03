@@ -417,10 +417,25 @@ replies, issue-status moves) do not apply, and that the deliverable is file
 changes, not prose. Measured motivation: the first live in-Multica run
 (2026-08-03) submitted the platform brief verbatim and produced an empty diff
 — the cloud model answered the local-agent instructions conversationally.
-The frame is applied at exec time only; the reconcile marker's
-`prompt_sha256` stays the hash of the raw stdin prompt, so retry/resume
-routing is independent of frame mode and wording. `--shim-frame off` submits
-verbatim.
+Issue materialization (same measured motivation, third live run): the
+daemon's ownership-mode prompt carries **no task content at all** — multica @
+37f3bb7 `buildPromptBody` names the issue id and instructs the agent to run
+`multica issue get` itself, which the cloud model cannot do. So when the
+frame is on, the shim resolves the issue id (the
+`.multica/daemon_task_context.json` sidecar at the workdir root first, the
+prompt's stable `Your assigned issue ID is:` line as fallback), runs
+`multica issue get <id> --output json` (60 s budget, workdir CWD), and leads
+the framed task with the issue's identifier/title/description; the raw
+dispatch message follows under a "provenance only" divider. Failure policy:
+an ownership turn whose issue cannot be materialized fails **F13** (a
+contentless submit is a paid no-op upstream); reply turns carry their trigger
+comment inline (`buildCommentPrompt`) and degrade with a warning; a prompt
+with no issue id at all (non-Multica usage) submits unenriched.
+
+The frame and issue block are applied at exec time only; the reconcile
+marker's `prompt_sha256` stays the hash of the raw stdin prompt, so
+retry/resume routing is independent of frame mode and wording. `--shim-frame
+off` submits verbatim and skips the issue fetch.
 
 Success = exit 0 + stdout's last non-empty line
 matching `^https://chatgpt\.com/codex/tasks/(task_[A-Za-z0-9_]+)$`
@@ -526,6 +541,7 @@ claude-CLI convention (C1).
 | F4 `E_SUBMIT` | SUBMIT | E8 | omitted | no | 1 | exec failed, no orphan found; verbatim stderr |
 | F4a `E_ENV_NOT_FOUND` | SUBMIT | E8 | omitted | no | 1 | verbatim `environment '<x>' not found` |
 | F4b `E_SUBMIT_AMBIGUOUS` | SUBMIT | E8 | omitted | no | 1 | >1 orphan candidate; ids listed, never guessed |
+| F13 `E_ISSUE_CONTEXT` | SUBMIT | E8 | omitted | no | 1 | ownership turn whose issue cannot be materialized (no id, or `multica issue get` failed); submitting would be a paid contentless run |
 | F5 `E_DEADLINE` | POLL | E8 | task id | no | 1 | run continues upstream; resume re-attaches |
 | F7 `E_POLL` | POLL | E8 | task id | no | 1 | 5 consecutive list failures / task vanished (3 misses + status fallback) |
 | F8 `E_UPSTREAM_STATUS` | POLL | E8 | task id | no | 1 | unknown status + stalled `updated_at` (5 polls), or a listed terminal status; verbatim |

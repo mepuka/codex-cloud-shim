@@ -67,6 +67,10 @@ type runner struct {
 	env    string
 	branch string
 	prompt string
+	// workdirRoot is the CWD as launched — the daemon's task workdir, where
+	// the .multica sidecars live — captured before ensureWorktree narrows
+	// cfg.Worktree to the checkout.
+	workdirRoot string
 	// worktreeSlug is the checkout's origin identity at resolve time; the
 	// landing path re-derives and compares it (identity guard, see resolve).
 	worktreeSlug string
@@ -96,6 +100,8 @@ func Run(ctx context.Context, cfg Config) int {
 	for _, w := range cfg.Args.Warnings {
 		r.log("warn", w)
 	}
+
+	r.workdirRoot = cfg.Worktree
 
 	// WORKTREE: discovery (CWD, or one checkout below — the Multica workdir
 	// layout), falling back once to the platform's own convention of running
@@ -432,10 +438,17 @@ func (r *runner) submit(ctx context.Context, submitPrompt, hash string) *failure
 		}
 	}
 
-	// The frame is applied here and nowhere else: hash (marker identity) was
-	// computed on the raw prompt by the caller, so reconcile/resume routing
-	// never sees the frame.
-	sub, err := r.client.Submit(ctx, r.env, r.branch, r.s.attempts, r.framedPrompt(submitPrompt))
+	// Frame + issue context are applied here and nowhere else: hash (marker
+	// identity) was computed on the raw prompt by the caller, so
+	// reconcile/resume routing never sees either.
+	issueBlock, f := r.issueContext(ctx)
+	if f != nil {
+		return f
+	}
+	if ctx.Err() != nil {
+		return nil // CANCEL surfaces in the caller
+	}
+	sub, err := r.client.Submit(ctx, r.env, r.branch, r.s.attempts, r.framedPrompt(issueBlock, submitPrompt))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil // CANCEL surfaces in the caller

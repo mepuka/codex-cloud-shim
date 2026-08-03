@@ -13,13 +13,19 @@ const (
 	frameOff   = "off"
 )
 
-// framedPrompt wraps the submit prompt with the cloud-facing preamble. It is
-// applied at SUBMIT only — marker identity (state.PromptHash) stays on the
-// raw stdin prompt, so reconcile and resume routing are unaffected by frame
-// mode or future wording changes.
-func (r *runner) framedPrompt(p string) string {
+// framedPrompt wraps the submit prompt with the cloud-facing preamble,
+// leading with the materialized issue block when one exists (the dispatch
+// message alone carries no task content on ownership turns — see
+// issuectx.go). It is applied at SUBMIT only — marker identity
+// (state.PromptHash) stays on the raw stdin prompt, so reconcile and resume
+// routing are unaffected by frame mode or future wording changes.
+func (r *runner) framedPrompt(issueBlock, p string) string {
 	if r.s.frame == frameOff {
 		return p
+	}
+	task := p
+	if issueBlock != "" {
+		task = issueBlock + "\n\n--- dispatch message (platform mechanics, for provenance only) ---\n\n" + p
 	}
 	return fmt.Sprintf(`You are Codex working in your own cloud workspace, on a checkout of %s (base branch %s).
 
@@ -29,5 +35,5 @@ Your deliverable is the code change itself. Edit the files in your workspace unt
 
 --- task ---
 
-%s`, r.env, r.branch, p)
+%s`, r.env, r.branch, task)
 }

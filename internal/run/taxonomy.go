@@ -36,6 +36,7 @@ const (
 	codeApplyConflict  = "E_APPLY_CONFLICT"   // F10
 	codeCommit         = "E_COMMIT"           // F11
 	codePush           = "E_PUSH"             // F12
+	codeIssueContext   = "E_ISSUE_CONTEXT"    // F13
 )
 
 // failure is one taxonomy row on its way to an E8/E9 result event.
