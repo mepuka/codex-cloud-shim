@@ -1,0 +1,9 @@
+diff --git a/docs/PROBE.md b/docs/PROBE.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..43c43b917fb777e095b402c0b97d8ea5d52ffe44
+--- /dev/null
++++ b/docs/PROBE.md
+@@ -0,0 +1,3 @@
++2026-08-03
++
++This repository provides a Claude Code-compatible CLI shim for running Codex Cloud tasks.

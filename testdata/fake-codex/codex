@@ -1,0 +1,104 @@
+#!/bin/sh
+# fake-codex — test stub reproducing the measured codex-cli 0.146.0 cloud
+# surface (docs/codex-cloud-contract.md; raw captures in docs/probe/).
+# Tests point --shim-codex-bin / cloud.Client.Bin here; the real `codex`
+# binary is never invoked in tests (fixed decision).
+#
+# Scenario switch: FAKE_CODEX_SCENARIO selects scenarios/<name>/ (default:
+# happy). FAKE_CODEX_STATE_DIR (default: CWD) holds the list-call counter and
+# calls.log (one line per invocation: CWD<TAB>argv) so tests can assert the
+# exact argv and CWD of every call.
+#
+# Fixture files per scenario (all optional unless a branch needs them):
+#   login.out login.exit  exec.out exec.err exec.exit exec.sleep
+#   list.N.json list.exit  status.out status.exit  diff.patch
+#   apply.patch apply.exit apply.stderr
+# list.N.json is served in call order; the last file repeats
+# (pending -> pending -> ready is three files, the third then repeats).
+set -u
+
+ROOT=$(cd "$(dirname "$0")" && pwd)
+SCEN=${FAKE_CODEX_SCENARIO:-happy}
+DIR="$ROOT/scenarios/$SCEN"
+STATE=${FAKE_CODEX_STATE_DIR:-$PWD}
+
+printf '%s\t%s\n' "$PWD" "$*" >>"$STATE/calls.log"
+
+file_or_default() { # $1=file $2=default-line
+  if [ -f "$1" ]; then cat "$1"; else printf '%s\n' "$2"; fi
+}
+
+exit_from() { # $1=file $2=default-code
+  if [ -f "$1" ]; then exit "$(cat "$1")"; else exit "$2"; fi
+}
+
+# Measured side effect: every cloud invocation appends startup/auth
+# diagnostics to ./error.log in its CWD (docs/probe/error.log).
+emit_error_log() {
+  {
+    printf '[stub] startup: base_url=https://chatgpt.com/backend-api path_style=wham\n'
+    printf '[stub] auth: mode=ChatGPT account_id=stub-account-id\n'
+  } >>./error.log
+}
+
+case "${1:-}" in
+login)
+  # codex login status (docs/codex-cloud-contract.md "Auth")
+  file_or_default "$DIR/login.out" "Logged in using ChatGPT"
+  exit_from "$DIR/login.exit" 0
+  ;;
+cloud)
+  emit_error_log
+  case "${2:-}" in
+  exec)
+    # fire-and-forget: one stdout line, the task URL (docs/probe/exec.out)
+    [ -f "$DIR/exec.sleep" ] && sleep "$(cat "$DIR/exec.sleep")"
+    [ -f "$DIR/exec.err" ] && cat "$DIR/exec.err" >&2
+    [ -f "$DIR/exec.out" ] && cat "$DIR/exec.out"
+    exit_from "$DIR/exec.exit" 0
+    ;;
+  list)
+    n=1
+    [ -f "$STATE/list.counter" ] && n=$(($(cat "$STATE/list.counter") + 1))
+    printf '%s\n' "$n" >"$STATE/list.counter"
+    while [ "$n" -gt 1 ] && [ ! -f "$DIR/list.$n.json" ]; do n=$((n - 1)); done
+    cat "$DIR/list.$n.json"
+    exit_from "$DIR/list.exit" 0
+    ;;
+  status)
+    # human-oriented bracket format (docs/probe/status-*.out)
+    cat "$DIR/status.out"
+    exit_from "$DIR/status.exit" 0
+    ;;
+  diff)
+    cat "$DIR/diff.patch"
+    exit 0
+    ;;
+  apply)
+    ec=0
+    [ -f "$DIR/apply.exit" ] && ec=$(cat "$DIR/apply.exit")
+    if [ "$ec" -eq 0 ]; then
+      # Measured semantics (docs/probe/apply-error.log): runs
+      # `git apply --3way` in CWD; exit 0 leaves the change STAGED;
+      # re-apply on an already-applied tree is idempotent (exit 0).
+      if git apply --reverse --check "$DIR/apply.patch" >/dev/null 2>&1; then
+        exit 0
+      fi
+      git apply --3way "$DIR/apply.patch"
+      exit $?
+    fi
+    # conflict path: tree untouched, counts line on stderr
+    [ -f "$DIR/apply.stderr" ] && cat "$DIR/apply.stderr" >&2
+    exit "$ec"
+    ;;
+  *)
+    # unknown-verb trap: proves no drifted invocation (e.g. a cancel verb)
+    # is ever made
+    exit 64
+    ;;
+  esac
+  ;;
+*)
+  exit 64
+  ;;
+esac

@@ -1,0 +1,21 @@
+{
+  "tasks": [
+    {
+      "id": "task_e_ffffffffffffffffffffffffffffffff",
+      "url": "https://chatgpt.com/codex/tasks/task_e_ffffffffffffffffffffffffffffffff",
+      "title": "Some other task",
+      "status": "ready",
+      "updated_at": "2026-08-03T15:30:00.000000000Z",
+      "environment_id": null,
+      "environment_label": "mepuka/codex-cloud-shim",
+      "summary": {
+        "files_changed": 0,
+        "lines_added": 0,
+        "lines_removed": 0
+      },
+      "is_review": false,
+      "attempt_total": 1
+    }
+  ],
+  "cursor": "c1"
+}

@@ -1,0 +1,5 @@
+Performing three-way merge...
+error: docs/PROBE.md: does not match index
+error: cannot read the current contents of 'docs/PROBE.md'
+error: docs/PROBE.md: patch does not apply
+Apply failed for task task_e_6a70b48f64648323bba8af2747578941 (applied=0, skipped=1, conflicts=0)

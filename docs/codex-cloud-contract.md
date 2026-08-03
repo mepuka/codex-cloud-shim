@@ -74,3 +74,9 @@ cites these files, never memory. Re-run `docs/probe-plan.md` on CLI upgrades.
 - `--attempts N > 1`: list/apply shapes for sibling attempts.
 - Behavior when the env label is ambiguous (two envs, same repo).
 - Whether `exec` can target a branch that doesn't exist upstream.
+- What `codex cloud status <dead-id>` returns (exit code + phrase) — needed
+  before any status failure may be read as "task gone".
+- Cloud command behavior from a non-repo CWD (every capture above was taken
+  inside the checkout; error.log shows the CLI parsing the CWD git origin).
+- Apply's raw terminal stdout/stderr on a conflict (the counts line above is
+  prose; the raw capture logs a space-separated form).

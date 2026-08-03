@@ -53,3 +53,26 @@ codex cloud diff "$TASK_ID" >$S/diff.patch 2>$S/diff.err
 Artifacts are committed under `docs/probe/` and become the measured contract
 (`docs/codex-cloud-contract.md`), which the implementation cites by capture
 file, never by memory.
+
+## Open items — shapes the current probe set does not pin
+
+Never guessed in code; each carries the conservative behavior the shim uses
+until a capture lands.
+
+1. **`codex cloud status <dead-id>`** — what a status call on a deleted or
+   never-existing task id returns (exit code, stdout/stderr phrase). Until
+   pinned, the shim treats EVERY status failure during an aliveness check as
+   a poll failure (E8 with the id) — never as "task truly gone" — because a
+   spurious gone-verdict fires E9 or a duplicate submit
+   (`internal/run/run.go` aliveness).
+2. **Cloud commands from a non-repo CWD** — every capture in `docs/probe/`
+   was taken from inside the repo checkout, and `error.log` shows the CLI
+   parsing the CWD git origin during env resolution. Capture one
+   `codex cloud list --env <label> --json` and one exec from an empty
+   non-git directory. Until pinned, the shim's scratch dir is a minimal git
+   repo mirroring the worktree's origin URL (`gitctx.MirrorOrigin`).
+3. **Apply's terminal counts line** — `docs/probe/apply-error.log` logs the
+   space-separated `applied=0 skipped=1 conflicts=0`; the contract prose
+   records a comma-separated terminal form. Capture apply's raw terminal
+   stdout/stderr on a conflict. Until pinned, the parser accepts both
+   separators (`internal/cloud/client.go` applyCountsRe).
