@@ -118,6 +118,8 @@ func (r *runner) issueContext(ctx context.Context) (string, *failure) {
 		return "", nil
 	}
 
+	r.issueRef = id
+
 	var b strings.Builder
 	b.WriteString("The dispatched work item")
 	if iss.Identifier != "" {
@@ -131,4 +133,53 @@ func (r *runner) issueContext(ctx context.Context) (string, *failure) {
 		b.WriteString(iss.Description)
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// captureSubmittedPrompt persists the exact exec prompt beside the workdir's
+// sidecars and narrates its size. The cloud task page is the only other
+// record of what was submitted, and it is behind a browser login; two
+// empty-diff live runs were undiagnosable for want of this file. Only in the
+// Multica workdir layout (workdir root above the checkout): when the CWD is
+// the checkout itself there is no sidecar level to write to, and the file
+// must never land inside a repo where it could enter a diff.
+func (r *runner) captureSubmittedPrompt(framed string) {
+	if r.workdirRoot == r.cfg.Worktree {
+		return
+	}
+	path := filepath.Join(r.workdirRoot, "codex-cloud-shim.submitted-prompt.txt")
+	if err := os.WriteFile(path, []byte(framed), 0o644); err != nil {
+		r.log("warn", fmt.Sprintf("submitted-prompt capture failed: %v", err))
+		return
+	}
+	r.log("info", fmt.Sprintf("submitting %d bytes (capture: %s)", len(framed), path))
+}
+
+// closeOwnership moves the dispatching issue to in_review after a successful
+// landing on an ownership turn — the Ownership-mode workflow step the local
+// agent would have run itself (never `done`: review belongs to a human). It
+// runs BEFORE the result event: the daemon may tear the process down once it
+// sees the result. Best-effort — a failure is narrated, never fatal — and
+// reply turns never touch status (platform rule: Reply mode changes no
+// status unless the comment asks).
+func (r *runner) closeOwnership(ctx context.Context) {
+	if !strings.Contains(r.prompt, ownershipMarker) {
+		return
+	}
+	id := r.issueRef
+	if id == "" {
+		id = r.issueID()
+	}
+	if id == "" {
+		return
+	}
+	sctx, cancel := context.WithTimeout(ctx, issueFetchTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(sctx, r.multicaBin(), "issue", "status", id, "in_review")
+	cmd.Dir = r.workdirRoot
+	cmd.WaitDelay = 5 * time.Second
+	if out, err := cmd.CombinedOutput(); err != nil {
+		r.log("warn", fmt.Sprintf("issue %s not moved to in_review (%v): %.200s", id, err, out))
+		return
+	}
+	r.log("info", fmt.Sprintf("issue %s moved to in_review", id))
 }

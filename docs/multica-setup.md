@@ -60,8 +60,11 @@ upstream run is never cancelled by local failures.
 `--shim-land report|apply|commit|push`, `--shim-attempts N` (best-of-N),
 `--shim-deadline` (default 30m), `--shim-poll-interval` (30s),
 `--shim-env` / `--shim-branch` overrides, `--shim-frame cloud|off` (default
-`cloud`: wrap the platform brief in a cloud-facing preamble so the model edits
-files instead of answering the local-agent instructions conversationally —
-the measured empty-diff failure of the first live run). A reviewer-flavored agent is just a
+`cloud`: wrap the platform brief in a cloud-facing preamble AND materialize
+the issue's title/description via `multica issue get` — ownership-mode
+prompts carry no task content at all, only a pointer the cloud model cannot
+follow, the measured empty-diff failure of the first live runs). After a
+successful ownership-turn landing the shim moves the issue to `in_review`
+(best-effort, never `done`). A reviewer-flavored agent is just a
 second agent on the same runtime with different custom_args (e.g.
 `["--shim-land","report","--shim-attempts","3"]`).

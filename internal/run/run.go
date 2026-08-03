@@ -71,6 +71,9 @@ type runner struct {
 	// the .multica sidecars live — captured before ensureWorktree narrows
 	// cfg.Worktree to the checkout.
 	workdirRoot string
+	// issueRef is the dispatching issue id once issueContext resolved it;
+	// closeOwnership reuses it instead of re-reading the sidecar.
+	issueRef string
 	// worktreeSlug is the checkout's origin identity at resolve time; the
 	// landing path re-derives and compares it (identity guard, see resolve).
 	worktreeSlug string
@@ -218,6 +221,9 @@ func (r *runner) run(ctx context.Context) int {
 	if f != nil || ctx.Err() != nil {
 		return r.failOrCancel(ctx, f)
 	}
+	// Ownership close BEFORE the result: the daemon may tear the process
+	// down once it sees the result event.
+	r.closeOwnership(ctx)
 	// A result that could not be written is exit 1 (design.md §6): on a
 	// broken stdout (daemon died, EPIPE) the shim must not report success.
 	if err := r.em.ResultSuccess(r.sid, time.Since(r.start).Milliseconds(), text); err != nil {
@@ -448,7 +454,9 @@ func (r *runner) submit(ctx context.Context, submitPrompt, hash string) *failure
 	if ctx.Err() != nil {
 		return nil // CANCEL surfaces in the caller
 	}
-	sub, err := r.client.Submit(ctx, r.env, r.branch, r.s.attempts, r.framedPrompt(issueBlock, submitPrompt))
+	framed := r.framedPrompt(issueBlock, submitPrompt)
+	r.captureSubmittedPrompt(framed)
+	sub, err := r.client.Submit(ctx, r.env, r.branch, r.s.attempts, framed)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil // CANCEL surfaces in the caller

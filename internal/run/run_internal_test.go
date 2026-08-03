@@ -298,6 +298,30 @@ func TestIssueContextFetchesAndRenders(t *testing.T) {
 	}
 }
 
+func TestCloseOwnershipMovesToInReviewOnOwnershipOnly(t *testing.T) {
+	wd := t.TempDir()
+	writeTaskContext(t, wd, "d64774f1-709f-4dee-b3de-0856e46dfdd4")
+	argsFile := filepath.Join(wd, "calls.txt")
+	getenv := fakeMultica(t, "#!/bin/sh\necho \"$@\" >> "+argsFile+"\n")
+
+	r := &runner{workdirRoot: wd, s: &settings{frame: frameCloud},
+		em:     protocol.NewEmitter(io.Discard),
+		prompt: "**Turn mode: Ownership.** etc", cfg: Config{Getenv: getenv}}
+	r.closeOwnership(context.Background())
+	b, err := os.ReadFile(argsFile)
+	if err != nil || !strings.Contains(string(b), "issue status d64774f1-709f-4dee-b3de-0856e46dfdd4 in_review") {
+		t.Fatalf("want in_review status call, got %q (%v)", b, err)
+	}
+
+	// Reply turns never touch status.
+	os.Remove(argsFile)
+	r.prompt = "**Turn mode: Reply.**"
+	r.closeOwnership(context.Background())
+	if _, err := os.Stat(argsFile); !os.IsNotExist(err) {
+		t.Fatal("reply turn must not call multica issue status")
+	}
+}
+
 func TestSettingsFrameValidation(t *testing.T) {
 	getenv := func(string) string { return "" }
 	for val, wantErr := range map[string]bool{"cloud": false, "off": false, "verbose": true} {

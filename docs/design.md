@@ -437,6 +437,20 @@ marker's `prompt_sha256` stays the hash of the raw stdin prompt, so
 retry/resume routing is independent of frame mode and wording. `--shim-frame
 off` submits verbatim and skips the issue fetch.
 
+Diagnostics: in the Multica workdir layout (workdir root above the checkout)
+the exact submitted prompt is persisted to
+`<workdir>/codex-cloud-shim.submitted-prompt.txt` — the cloud task page is
+the only other record and it sits behind a browser login. Never written when
+the CWD is the checkout itself (it must not be able to enter a diff).
+
+Ownership close: after a successful landing on an ownership turn the shim
+runs `multica issue status <id> in_review` — the Ownership-mode workflow
+step the local agent would have run (never `done`: review belongs to a
+human). Best-effort (a failure is a warn log, never fatal), before the
+result event (the daemon may tear the process down once it sees the
+result), and never on reply turns (platform rule: Reply mode changes no
+status).
+
 Success = exit 0 + stdout's last non-empty line
 matching `^https://chatgpt\.com/codex/tasks/(task_[A-Za-z0-9_]+)$`
 (probe/exec.out: exactly one line, task id = last path segment, measured
