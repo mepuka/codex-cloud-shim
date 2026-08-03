@@ -175,3 +175,38 @@ func TestEnsureWorktreeNoResourcesExplains(t *testing.T) {
 		t.Fatalf("want actionable no-resource failure, got %+v", f)
 	}
 }
+
+func TestFramedPromptWrapsByDefaultAndOffIsVerbatim(t *testing.T) {
+	r := &runner{s: &settings{frame: frameCloud}, env: "mepuka/tailtalk", branch: "main"}
+	framed := r.framedPrompt("Fix the bug in foo.go")
+	if !strings.HasSuffix(framed, "--- task ---\n\nFix the bug in foo.go") {
+		t.Errorf("raw prompt must close the framed text verbatim, got tail %q", framed[max(0, len(framed)-60):])
+	}
+	for _, want := range []string{"mepuka/tailtalk", "main", "code change itself"} {
+		if !strings.Contains(framed, want) {
+			t.Errorf("frame missing %q", want)
+		}
+	}
+
+	r.s.frame = frameOff
+	if got := r.framedPrompt("Fix the bug in foo.go"); got != "Fix the bug in foo.go" {
+		t.Errorf("frame off must submit verbatim, got %q", got)
+	}
+}
+
+func TestSettingsFrameValidation(t *testing.T) {
+	getenv := func(string) string { return "" }
+	for val, wantErr := range map[string]bool{"cloud": false, "off": false, "verbose": true} {
+		s, err := newSettings(&protocol.ParsedArgs{Shim: map[string]string{"frame": val}}, getenv)
+		if wantErr != (err != nil) {
+			t.Errorf("frame=%q: err=%v, wantErr=%v", val, err, wantErr)
+		}
+		if err == nil && s.frame != val {
+			t.Errorf("frame=%q not applied, got %q", val, s.frame)
+		}
+	}
+	s, err := newSettings(&protocol.ParsedArgs{}, getenv)
+	if err != nil || s.frame != frameCloud {
+		t.Errorf("default frame must be %q, got %q (err %v)", frameCloud, s.frame, err)
+	}
+}

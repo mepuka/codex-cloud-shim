@@ -51,6 +51,7 @@ var shimFlagNames = map[string]bool{
 	"env":           true,
 	"branch":        true,
 	"land":          true,
+	"frame":         true,
 	"attempts":      true,
 	"attempt":       true,
 	"poll-interval": true,

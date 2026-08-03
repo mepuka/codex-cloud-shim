@@ -59,6 +59,9 @@ upstream run is never cancelled by local failures.
 
 `--shim-land report|apply|commit|push`, `--shim-attempts N` (best-of-N),
 `--shim-deadline` (default 30m), `--shim-poll-interval` (30s),
-`--shim-env` / `--shim-branch` overrides. A reviewer-flavored agent is just a
+`--shim-env` / `--shim-branch` overrides, `--shim-frame cloud|off` (default
+`cloud`: wrap the platform brief in a cloud-facing preamble so the model edits
+files instead of answering the local-agent instructions conversationally —
+the measured empty-diff failure of the first live run). A reviewer-flavored agent is just a
 second agent on the same runtime with different custom_args (e.g.
 `["--shim-land","report","--shim-attempts","3"]`).

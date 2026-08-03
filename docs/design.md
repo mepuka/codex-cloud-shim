@@ -98,6 +98,7 @@ malformed values → F0.
 | `--shim-env <label-or-id>` | derived from origin slug (§7.1) | passed verbatim as `--env` |
 | `--shim-branch <b>` | detected (§7.2) | base branch; `--branch` is ALWAYS passed to exec |
 | `--shim-land <mode>` | `commit` | `report` \| `apply` \| `commit` \| `push` |
+| `--shim-frame <mode>` | `cloud` | `cloud` wraps the submit prompt in the cloud-facing preamble (§5.5); `off` submits the stdin prompt verbatim |
 | `--shim-attempts <N>` | unset | forwarded as `exec --attempts N` |
 | `--shim-attempt <N>` | unset | forwarded as `apply --attempt N` |
 | `--shim-poll-interval <dur>` | `30s` | list-poll cadence |
@@ -406,7 +407,22 @@ only), so "resume" routes on the marker's prompt hash:
 ### 5.5 SUBMIT
 
 `codex cloud exec --env <E> --branch <B> [--attempts N] <prompt>` — scratch
-CWD, `--shim-exec-timeout`. Success = exit 0 + stdout's last non-empty line
+CWD, `--shim-exec-timeout`.
+
+Prompt frame (`--shim-frame`, default `cloud`): the submitted prompt is the
+stdin prompt (plus the §5.4 follow-up prefix when present) wrapped in a
+cloud-facing preamble that names the env and base branch, tells the model the
+brief may address a local agent whose platform mechanics (checkouts, comment
+replies, issue-status moves) do not apply, and that the deliverable is file
+changes, not prose. Measured motivation: the first live in-Multica run
+(2026-08-03) submitted the platform brief verbatim and produced an empty diff
+— the cloud model answered the local-agent instructions conversationally.
+The frame is applied at exec time only; the reconcile marker's
+`prompt_sha256` stays the hash of the raw stdin prompt, so retry/resume
+routing is independent of frame mode and wording. `--shim-frame off` submits
+verbatim.
+
+Success = exit 0 + stdout's last non-empty line
 matching `^https://chatgpt\.com/codex/tasks/(task_[A-Za-z0-9_]+)$`
 (probe/exec.out: exactly one line, task id = last path segment, measured
 shape `task_e_[0-9a-f]{32}` logged if deviating; stderr empty). Then: write

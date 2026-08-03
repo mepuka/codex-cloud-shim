@@ -23,6 +23,7 @@ type settings struct {
 	env      string // --shim-env; "" = derive from origin slug (§7.1)
 	branch   string // --shim-branch; "" = detect (§7.2)
 	landMode string
+	frame    string // --shim-frame; cloud (default) wraps the submit prompt, off submits verbatim
 	issueKey string // --shim-issue-key; "" = extract from prompt
 	codexBin string
 	resume   string // --resume session id (claude flag, consumed with meaning)
@@ -42,6 +43,7 @@ type settings struct {
 func newSettings(args *protocol.ParsedArgs, getenv func(string) string) (*settings, error) {
 	s := &settings{
 		landMode:     landCommit,
+		frame:        frameCloud,
 		codexBin:     "codex",
 		resume:       args.Resume,
 		listPages:    5,
@@ -66,6 +68,13 @@ func newSettings(args *protocol.ParsedArgs, getenv func(string) string) (*settin
 				s.landMode = val
 			default:
 				err = fmt.Errorf("must be one of report|apply|commit|push, got %q", val)
+			}
+		case "frame":
+			switch val {
+			case frameCloud, frameOff:
+				s.frame = val
+			default:
+				err = fmt.Errorf("must be one of cloud|off, got %q", val)
 			}
 		case "issue-key":
 			s.issueKey = val

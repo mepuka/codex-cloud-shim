@@ -433,6 +433,11 @@ func TestE2EHappyCommitEventStream(t *testing.T) {
 			if !strings.Contains(argvStr, "--env "+envLabel) || !strings.Contains(argvStr, "--branch main") {
 				t.Fatalf("exec argv missing env/branch: %q", argvStr)
 			}
+			// Default frame: the raw prompt is submitted inside the
+			// cloud-facing preamble, never bare.
+			if !strings.Contains(argvStr, "--- task ---") || !strings.Contains(argvStr, promptText) {
+				t.Fatalf("exec argv not framed for cloud: %q", argvStr)
+			}
 		}
 	}
 	if !sawExec || !sawApply {

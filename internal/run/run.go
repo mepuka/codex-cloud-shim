@@ -432,7 +432,10 @@ func (r *runner) submit(ctx context.Context, submitPrompt, hash string) *failure
 		}
 	}
 
-	sub, err := r.client.Submit(ctx, r.env, r.branch, r.s.attempts, submitPrompt)
+	// The frame is applied here and nowhere else: hash (marker identity) was
+	// computed on the raw prompt by the caller, so reconcile/resume routing
+	// never sees the frame.
+	sub, err := r.client.Submit(ctx, r.env, r.branch, r.s.attempts, r.framedPrompt(submitPrompt))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil // CANCEL surfaces in the caller
