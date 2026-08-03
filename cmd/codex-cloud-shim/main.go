@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -17,7 +18,16 @@ import (
 	"github.com/mepuka/codex-cloud-shim/internal/run"
 )
 
-const version = "codex-cloud-shim v0.1.0"
+// version derives from the module's build info: `go install pkg@vX.Y.Z`
+// stamps the tag, a source build reports (devel). Never hardcoded — a const
+// here drifted from the tag the very first release (v0.1.1 shipped reporting
+// v0.1.0).
+func version() string {
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return "codex-cloud-shim " + bi.Main.Version
+	}
+	return "codex-cloud-shim (devel)"
+}
 
 const usage = `codex-cloud-shim — Codex Cloud runner speaking the claude stream-json protocol
 
@@ -61,7 +71,7 @@ func realMain() int {
 	// version-probes at registration and nonzero would deregister the
 	// runtime (design.md §2.1).
 	if args.Version {
-		fmt.Println(version)
+		fmt.Println(version())
 		return 0
 	}
 	if args.Help {
