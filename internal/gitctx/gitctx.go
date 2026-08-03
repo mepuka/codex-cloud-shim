@@ -8,7 +8,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -85,6 +87,45 @@ func MirrorOrigin(ctx context.Context, src, dir string) error {
 		return fmt.Errorf("add scratch origin: %w", err)
 	}
 	return nil
+}
+
+// DiscoverWorktree resolves the actual repo checkout from a launch CWD.
+// Multica launches agents with CWD = the task workdir, whose root carries the
+// generated brief while the repository checkout sits ONE LEVEL BELOW (measured
+// against a live task workdir 2026-08-03; re-measured by this shim's first
+// in-platform run failing E_GIT_CONTEXT at the workdir root). Rule: the CWD
+// itself if it is a repo; else exactly ONE immediate child that is a repo;
+// zero or several candidates is an error naming them — never a guess, because
+// picking the wrong checkout would submit a different repo's env and land a
+// diff in the wrong tree.
+func DiscoverWorktree(ctx context.Context, cwd string) (dir, rule string, err error) {
+	if _, gitErr := Run(ctx, cwd, "rev-parse", "--git-dir"); gitErr == nil {
+		return cwd, "cwd is a repo", nil
+	}
+	entries, readErr := os.ReadDir(cwd)
+	if readErr != nil {
+		return "", "", fmt.Errorf("cwd is not a git repository and cannot be scanned: %w", readErr)
+	}
+	var candidates []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		// A checkout carries .git as a dir (clone) or a file (linked
+		// worktree); a stat covers both and avoids a git exec per child.
+		if _, statErr := os.Stat(filepath.Join(cwd, e.Name(), ".git")); statErr == nil {
+			candidates = append(candidates, e.Name())
+		}
+	}
+	switch len(candidates) {
+	case 1:
+		return filepath.Join(cwd, candidates[0]), "single checkout under the task workdir", nil
+	case 0:
+		return "", "", errors.New("cwd is not a git repository and no checkout was found one level below; launch in the checkout or fix the workdir")
+	default:
+		return "", "", fmt.Errorf("cwd is not a git repository and %d checkouts sit below it (%s); ambiguous — refusing to guess",
+			len(candidates), strings.Join(candidates, ", "))
+	}
 }
 
 // OriginSlug resolves the repo's origin remote to its owner/repo slug.

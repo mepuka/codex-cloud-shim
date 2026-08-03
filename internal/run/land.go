@@ -62,6 +62,16 @@ func (r *runner) land(ctx context.Context, task *cloud.Task) (string, *failure) 
 	// 3. apply (apply|commit|push): worktree CWD, hygiene-wrapped by the
 	// cloud client (§3/C7). Measured semantics: exit 0 leaves the change
 	// staged; conflict exits 1 with the tree untouched.
+	// Identity guard (see resolve): the checkout must still be the repo the
+	// task was submitted for — a swap between submit and land would apply a
+	// foreign diff.
+	if r.worktreeSlug != "" {
+		if nowSlug, err := gitctx.OriginSlug(ctx, r.cfg.Worktree); err != nil || !strings.EqualFold(nowSlug, r.worktreeSlug) {
+			return "", failf(codeGitContext, r.sid,
+				"identity mismatch at landing: checkout origin is now %q (err: %v) but the task was submitted from %q — refusing to land",
+				nowSlug, err, r.worktreeSlug)
+		}
+	}
 	r.log("info", "applying diff to worktree")
 	if res, err := r.client.Apply(ctx, r.cfg.Worktree, r.sid, r.s.attempt); err != nil {
 		if errors.Is(err, cloud.ErrApplyFailed) && res != nil && res.HasCounts {

@@ -67,6 +67,9 @@ type runner struct {
 	env    string
 	branch string
 	prompt string
+	// worktreeSlug is the checkout's origin identity at resolve time; the
+	// landing path re-derives and compares it (identity guard, see resolve).
+	worktreeSlug string
 
 	// lastTask is the freshest list observation — the commit-title source.
 	lastTask   *cloud.Task
@@ -94,6 +97,18 @@ func Run(ctx context.Context, cfg Config) int {
 		r.log("warn", w)
 	}
 
+	// WORKTREE DISCOVERY: Multica launches with CWD = the task workdir whose
+	// root holds the generated brief; the checkout sits one level below
+	// (measured; this shim's first in-platform run failed E_GIT_CONTEXT at
+	// the workdir root). Everything downstream — env slug, branch, apply,
+	// commit, push, the reconcile marker — keys off the discovered checkout.
+	if wt, rule, err := gitctx.DiscoverWorktree(ctx, cfg.Worktree); err != nil {
+		return r.fail(failf(codeGitContext, "", "%v", err))
+	} else if wt != cfg.Worktree {
+		r.cfg.Worktree = wt
+		r.log("info", fmt.Sprintf("worktree %s (rule: %s)", wt, rule))
+	}
+
 	// A hard kill (Multica's SIGKILL escalation, Windows termination, the
 	// 2 s exit backstop) skips the deferred RemoveAll, so scratch dirs can
 	// accumulate across runs; sweep stale ones from prior processes first.
@@ -111,7 +126,7 @@ func Run(ctx context.Context, cfg Config) int {
 	// SSH GitHub origin"). Mirror the worktree's origin into the scratch
 	// dir so codex sees the same env-resolution context there; a bare
 	// non-repo CWD is unmeasured (docs/probe-plan.md, open items).
-	if err := gitctx.MirrorOrigin(ctx, cfg.Worktree, scratch); err != nil {
+	if err := gitctx.MirrorOrigin(ctx, r.cfg.Worktree, scratch); err != nil {
 		r.log("warn", fmt.Sprintf(
 			"scratch dir lacks git origin context (%v); codex env resolution from a non-repo CWD is unmeasured", err))
 	}
@@ -237,16 +252,33 @@ func (r *runner) startLandingKeepalive(ctx context.Context) func() {
 }
 
 // resolve pins env and base branch, narrating both decisions (design.md §5.2).
+//
+// Identity guard: the origin slug is the one identity shared by the checkout
+// (where the diff lands) and the environment label (what the cloud task runs
+// against). Every path that could split those two identities — a pinned env
+// over a foreign checkout, a swapped checkout mid-run, a stale marker — is
+// checked against the slug, because landing repo X's diff into checkout Y is
+// the failure that actually hurts. No cryptographic binding is possible or
+// pretended: everything here runs as one OS user, and the daemon-created
+// workdir is the trust anchor.
 func (r *runner) resolve(ctx context.Context) *failure {
+	slug, slugErr := gitctx.OriginSlug(ctx, r.cfg.Worktree)
+	if slugErr == nil {
+		r.worktreeSlug = slug
+	}
+
 	envRule := "--shim-env"
 	r.env = r.s.env
 	if r.env == "" {
-		slug, err := gitctx.OriginSlug(ctx, r.cfg.Worktree)
-		if err != nil {
-			return failf(codeGitContext, "", "cannot derive env from origin (%v); pin --shim-env via custom_args", err)
+		if slugErr != nil {
+			return failf(codeGitContext, "", "cannot derive env from origin (%v); pin --shim-env via custom_args", slugErr)
 		}
 		r.env = slug
 		envRule = "origin slug"
+	} else if slugComparable(r.env) && slugErr == nil && !strings.EqualFold(r.env, slug) {
+		return failf(codeGitContext, "",
+			"identity mismatch: --shim-env pins %q but the checkout's origin is %q — refusing to submit against one repo and land into another",
+			r.env, slug)
 	}
 	r.log("info", fmt.Sprintf("env %s (rule: %s)", r.env, envRule))
 
@@ -311,6 +343,16 @@ func (r *runner) route(ctx context.Context) *failure {
 			}
 		}
 		return r.submit(ctx, submitPrompt, hash)
+	}
+
+	if marker != nil && marker.Env != "" && r.worktreeSlug != "" &&
+		slugComparable(marker.Env) && !strings.EqualFold(marker.Env, r.worktreeSlug) {
+		// Identity guard: the marker was written beside a checkout whose
+		// origin no longer matches — adopting its task would attach this
+		// run to another repo's submission.
+		return failf(codeGitContext, "",
+			"identity mismatch: reconcile marker records env %q but the checkout's origin is %q — refusing to adopt across repos; delete %s/codex-cloud-shim/state.json under the git dir if the origin change was deliberate",
+			marker.Env, r.worktreeSlug, "<git-dir>")
 	}
 
 	if marker != nil && marker.PromptSHA256 == hash {
@@ -731,6 +773,11 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 }
 
 func taskURL(id string) string { return "https://chatgpt.com/codex/tasks/" + id }
+
+// slugComparable reports whether an env value is an owner/repo label the
+// identity guard can compare against a checkout's origin slug. Opaque env IDs
+// (hex, no slash) carry no repo identity and are exempt from comparison.
+func slugComparable(env string) bool { return strings.Contains(env, "/") }
 
 func diffStat(s *cloud.Summary) string {
 	if s == nil || (s.FilesChanged == 0 && s.LinesAdded == 0 && s.LinesRemoved == 0) {

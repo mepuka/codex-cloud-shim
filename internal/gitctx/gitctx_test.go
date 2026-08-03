@@ -331,3 +331,56 @@ func TestPushDetachedHeadRefused(t *testing.T) {
 		t.Error("want refusal on detached HEAD")
 	}
 }
+
+func TestDiscoverWorktree(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("cwd itself is a repo", func(t *testing.T) {
+		dir := t.TempDir()
+		runGit(t, dir, "init", "-q")
+		got, rule, err := DiscoverWorktree(ctx, dir)
+		if err != nil || got != dir {
+			t.Fatalf("got %q %q %v", got, rule, err)
+		}
+	})
+
+	t.Run("multica workdir layout: brief at root, single checkout below", func(t *testing.T) {
+		workdir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(workdir, "CLAUDE.md"), []byte("brief"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		checkout := filepath.Join(workdir, "repo")
+		if err := os.Mkdir(checkout, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, checkout, "init", "-q")
+		if err := os.Mkdir(filepath.Join(workdir, "notes"), 0o755); err != nil {
+			t.Fatal(err) // a plain sibling dir must not confuse discovery
+		}
+		got, rule, err := DiscoverWorktree(ctx, workdir)
+		if err != nil || got != checkout {
+			t.Fatalf("got %q %q %v", got, rule, err)
+		}
+	})
+
+	t.Run("zero candidates errors", func(t *testing.T) {
+		if _, _, err := DiscoverWorktree(ctx, t.TempDir()); err == nil {
+			t.Fatal("want error for no checkout anywhere")
+		}
+	})
+
+	t.Run("two candidates refuse to guess", func(t *testing.T) {
+		workdir := t.TempDir()
+		for _, name := range []string{"a", "b"} {
+			d := filepath.Join(workdir, name)
+			if err := os.Mkdir(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			runGit(t, d, "init", "-q")
+		}
+		_, _, err := DiscoverWorktree(ctx, workdir)
+		if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+			t.Fatalf("want ambiguous error, got %v", err)
+		}
+	})
+}
