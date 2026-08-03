@@ -274,6 +274,16 @@ func Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.WaitDelay = runWaitDelay
+	// The shim has no console: any credential or host-key prompt cannot be
+	// answered, and on Windows a prompting subprocess hangs silently instead
+	// of failing (measured 2026-08-03: a daemon-context `git push` over ssh
+	// sat 10+ minutes in an unanswerable prompt). Force every prompt path
+	// into an immediate, quotable failure.
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GCM_INTERACTIVE=never",
+		"GIT_SSH_COMMAND=ssh -oBatchMode=yes -oConnectTimeout=15",
+	)
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
