@@ -74,6 +74,10 @@ type runner struct {
 	// issueRef is the dispatching issue id once issueContext resolved it;
 	// closeOwnership reuses it instead of re-reading the sidecar.
 	issueRef string
+	// issueKeyFromIssue is the human key (DEV-87) from the materialized
+	// issue — the commit-title suffix source on ownership turns, whose
+	// prompt names the issue only by uuid.
+	issueKeyFromIssue string
 	// worktreeSlug is the checkout's origin identity at resolve time; the
 	// landing path re-derives and compares it (identity guard, see resolve).
 	worktreeSlug string

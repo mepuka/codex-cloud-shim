@@ -99,8 +99,15 @@ func (r *runner) land(ctx context.Context, task *cloud.Task) (string, *failure) 
 	}
 
 	// 4. commit (commit|push): title from the cloud task, issue key from the
-	// flag or the prompt — never guessed (§7.3).
+	// flag, the materialized issue, or the prompt — never guessed (§7.3).
+	// The materialized identifier matters on ownership turns: their dispatch
+	// prompt names the issue only by uuid, so the regex finds nothing and
+	// the first landed commit (af6f38fe, 2026-08-03) shipped without its
+	// (DEV-87) suffix — breaking the ruled commit→issue chain.
 	key := r.s.issueKey
+	if key == "" {
+		key = r.issueKeyFromIssue
+	}
 	if key == "" {
 		key = gitctx.IssueKey(r.prompt)
 	}

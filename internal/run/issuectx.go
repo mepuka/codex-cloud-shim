@@ -120,6 +120,7 @@ func (r *runner) issueContext(ctx context.Context) (string, *failure) {
 	}
 
 	r.issueRef = id
+	r.issueKeyFromIssue = iss.Identifier
 
 	var b strings.Builder
 	b.WriteString("The dispatched work item")
