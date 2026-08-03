@@ -189,13 +189,16 @@ func TestFramedPromptWrapsByDefaultAndOffIsVerbatim(t *testing.T) {
 	}
 
 	withIssue := r.framedPrompt("The dispatched work item (issue DEV-87):\n\nTitle: T", "dispatch text")
-	for _, want := range []string{"issue DEV-87", "provenance only", "dispatch text"} {
+	for _, want := range []string{"issue DEV-87", "context only", "dispatch text", "editing the files in your workspace now"} {
 		if !strings.Contains(withIssue, want) {
 			t.Errorf("issue-framed prompt missing %q", want)
 		}
 	}
-	if strings.Index(withIssue, "issue DEV-87") > strings.Index(withIssue, "dispatch text") {
-		t.Error("issue block must lead the dispatch message")
+	// Measured 2026-08-03: the model follows the prompt's tail, so the work
+	// item must come AFTER the dispatch message and the prompt must end on
+	// the imperative.
+	if strings.Index(withIssue, "issue DEV-87") < strings.Index(withIssue, "dispatch text") {
+		t.Error("work item must follow the dispatch message, not lead it")
 	}
 
 	r.s.frame = frameOff

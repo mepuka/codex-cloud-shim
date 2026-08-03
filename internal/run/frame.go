@@ -25,7 +25,16 @@ func (r *runner) framedPrompt(issueBlock, p string) string {
 	}
 	task := p
 	if issueBlock != "" {
-		task = issueBlock + "\n\n--- dispatch message (platform mechanics, for provenance only) ---\n\n" + p
+		// Order is load-bearing, measured 2026-08-03: with the issue block
+		// first and the dispatch message last, three live runs returned
+		// empty diffs while a bare imperative probe on the same env landed
+		// +1/-0 minutes later — the model follows the prompt's tail. The
+		// work item goes last and the prompt ends on the action.
+		task = "--- dispatch message from the platform (context only; its CLI instructions do not apply here) ---\n\n" +
+			p +
+			"\n\n--- the work item (your task) ---\n\n" +
+			issueBlock +
+			"\n\nDo the work described in the work item above by editing the files in your workspace now."
 	}
 	return fmt.Sprintf(`You are Codex working in your own cloud workspace, on a checkout of %s (base branch %s).
 
