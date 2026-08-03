@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mepuka/codex-cloud-shim/internal/gitctx"
 )
 
 // Default subprocess budgets (design.md §3). exec was measured at 3.4 s
@@ -112,6 +114,11 @@ func (c *Client) run(ctx context.Context, dir string, timeout time.Duration, arg
 	cmd := exec.CommandContext(cctx, c.bin(), args...)
 	cmd.Dir = dir
 	cmd.WaitDelay = waitDelay
+	// The codex CLI can spawn its own children (node shims, git for apply);
+	// killing only the leader would orphan them holding our pipes. On Unix the
+	// whole process group dies with the context; on Windows the default
+	// leader-kill stands (no pgid semantics).
+	setProcGroup(cmd)
 	if len(c.Env) > 0 {
 		cmd.Env = append(os.Environ(), c.Env...)
 	}
@@ -320,7 +327,15 @@ func (c *Client) Apply(ctx context.Context, worktree, id string, attempt int) (*
 	hygErr := pre.restore(ctx)
 
 	res := &ApplyResult{Stderr: truncateBytes(stderr, stderrQuoteLimit)}
-	if m := applyCountsRe.FindSubmatch(append(stdout, stderr...)); m != nil {
+	// Streams are searched separately: gluing them (append) would both alias
+	// stdout's backing array and juxtapose the last stdout token with the
+	// first stderr token, letting a counts-like fragment spanning the seam
+	// parse as corrupt numbers.
+	m := applyCountsRe.FindSubmatch(stdout)
+	if m == nil {
+		m = applyCountsRe.FindSubmatch(stderr)
+	}
+	if m != nil {
 		res.Applied, _ = strconv.Atoi(string(m[1]))
 		res.Skipped, _ = strconv.Atoi(string(m[2]))
 		res.Conflicts, _ = strconv.Atoi(string(m[3]))
@@ -412,18 +427,10 @@ func ensureExcludeEntry(ctx context.Context, worktree string) {
 }
 
 func gitQuiet(ctx context.Context, dir string, args ...string) error {
-	_, err := gitOutput(ctx, dir, args...)
+	_, err := gitctx.Run(ctx, dir, args...)
 	return err
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	var outBuf, errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(errBuf.String()))
-	}
-	return strings.TrimSpace(outBuf.String()), nil
+	return gitctx.Run(ctx, dir, args...)
 }

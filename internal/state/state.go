@@ -6,16 +6,15 @@
 package state
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
+
+	"github.com/mepuka/codex-cloud-shim/internal/gitctx"
 )
 
 // Marker records one submitted cloud task (design.md §5.3).
@@ -39,15 +38,10 @@ func PromptHash(prompt string) string {
 
 // Path resolves the marker location under the worktree's git dir.
 func Path(ctx context.Context, worktree string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
-	cmd.Dir = worktree
-	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git rev-parse --git-dir: %w (%s)", err, strings.TrimSpace(errBuf.String()))
+	gitDir, err := gitctx.Run(ctx, worktree, "rev-parse", "--git-dir")
+	if err != nil {
+		return "", err
 	}
-	gitDir := strings.TrimSpace(out.String())
 	if !filepath.IsAbs(gitDir) {
 		gitDir = filepath.Join(worktree, gitDir)
 	}

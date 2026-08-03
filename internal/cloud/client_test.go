@@ -410,3 +410,29 @@ func TestLoginStatus(t *testing.T) {
 		t.Errorf("out = %q", out)
 	}
 }
+
+func TestApplyCountsParsedPerStreamNeverGlued(t *testing.T) {
+	// The counts line may arrive on either stream (no raw capture pins one —
+	// docs/probe-plan.md open item 3), but the two streams must never be
+	// concatenated: a fragment ending one stream plus a fragment starting the
+	// other must not assemble into a parse.
+	if m := applyCountsRe.FindSubmatch([]byte("applied=1, skipped=0, conflicts=0")); m == nil {
+		t.Fatal("comma form must parse")
+	}
+	if m := applyCountsRe.FindSubmatch([]byte("applied=1 skipped=0 conflicts=0")); m == nil {
+		t.Fatal("space form must parse")
+	}
+	stdout := []byte("some output ending with applied=9")
+	stderr := []byte(" skipped=9 conflicts=9 spurious")
+	if m := applyCountsRe.FindSubmatch(stdout); m != nil {
+		t.Fatal("stdout fragment alone must not parse")
+	}
+	if m := applyCountsRe.FindSubmatch(stderr); m != nil {
+		t.Fatal("stderr fragment alone must not parse")
+	}
+	// The glued form WOULD parse — which is exactly why Apply searches the
+	// streams separately.
+	if m := applyCountsRe.FindSubmatch(append(append([]byte{}, stdout...), stderr...)); m == nil {
+		t.Fatal("sanity: the glued seam does assemble a false match; per-stream search is load-bearing")
+	}
+}

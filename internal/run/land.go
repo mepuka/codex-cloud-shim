@@ -1,12 +1,11 @@
 package run
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/mepuka/codex-cloud-shim/internal/cloud"
 	"github.com/mepuka/codex-cloud-shim/internal/gitctx"
@@ -199,21 +198,23 @@ func stagedNameStatus(ctx context.Context, dir string) (string, error) {
 	return gitOut(ctx, dir, "diff", "--cached", "--name-status")
 }
 
+// remoteHasBranchTimeout bounds the one NETWORK git call on the pre-poll
+// path: route() runs before any deadline context exists, and an unreachable
+// remote must degrade the follow-up base rule (fall through to the local
+// chain), never hang the shim.
+const remoteHasBranchTimeout = 30 * time.Second
+
 // remoteHasBranch reports whether origin already carries branch (the
-// follow-up-in-push-mode base rule, §5.4).
+// follow-up-in-push-mode base rule, §5.4). False on any failure, including
+// the timeout — the caller then uses the local base-branch chain, which is
+// the correct conservative answer when the remote cannot be consulted.
 func remoteHasBranch(ctx context.Context, dir, branch string) bool {
-	out, err := gitOut(ctx, dir, "ls-remote", "--heads", "origin", branch)
+	tctx, cancel := context.WithTimeout(ctx, remoteHasBranchTimeout)
+	defer cancel()
+	out, err := gitOut(tctx, dir, "ls-remote", "--heads", "origin", branch)
 	return err == nil && out != ""
 }
 
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	var out, errBuf bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(errBuf.String()))
-	}
-	return strings.TrimSpace(out.String()), nil
+	return gitctx.Run(ctx, dir, args...)
 }

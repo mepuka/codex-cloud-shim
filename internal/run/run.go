@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,10 @@ type runner struct {
 	s      *settings
 	em     *protocol.Emitter
 	client *cloud.Client
+	// cancelRun aborts the lifecycle from inside: a failed event WRITE means
+	// the daemon (the only stdout reader) is gone, and continuing would poll
+	// a paid run for up to the full deadline with nobody listening.
+	cancelRun context.CancelFunc
 
 	start    time.Time
 	lastEmit time.Time
@@ -76,7 +81,7 @@ func Run(ctx context.Context, cfg Config) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	r := &runner{cfg: cfg, em: cfg.Emitter, start: time.Now()}
+	r := &runner{cfg: cfg, em: cfg.Emitter, start: time.Now(), cancelRun: cancel}
 
 	s, err := newSettings(cfg.Args, cfg.Getenv)
 	if err != nil {
@@ -88,7 +93,12 @@ func Run(ctx context.Context, cfg Config) int {
 		r.log("warn", w)
 	}
 
-	scratch, err := os.MkdirTemp("", "codex-cloud-shim-*")
+	// A hard kill (Multica's SIGKILL escalation, Windows termination, the
+	// 2 s exit backstop) skips the deferred RemoveAll, so scratch dirs can
+	// accumulate across runs; sweep stale ones from prior processes first.
+	sweepStaleScratch(os.TempDir(), time.Now())
+
+	scratch, err := os.MkdirTemp("", scratchPrefix+"*")
 	if err != nil {
 		return r.fail(failf(codeConfig, "", "create scratch dir: %v", err))
 	}
@@ -162,8 +172,7 @@ func (r *runner) run(ctx context.Context) int {
 	}
 
 	// E1 + E2 — the daemon captures session_id from E1 and flips to running.
-	r.em.SystemInit(r.sid)
-	r.lastEmit = time.Now()
+	r.noteEmit(r.em.SystemInit(r.sid))
 	r.say(fmt.Sprintf("%s Codex Cloud task %s (env %s, base branch %s).\n%s\nPolling every %s; deadline %s.",
 		r.adoptNote, r.sid, r.env, r.branch, r.url,
 		fmtDur(r.s.pollInterval), fmtDur(r.s.deadline)))
@@ -440,7 +449,13 @@ func (r *runner) submit(ctx context.Context, submitPrompt, hash string) *failure
 	return nil
 }
 
+// saveMarker persists the reconcile marker. It runs under WithoutCancel:
+// the marker IS the crash-window protection — a cancel arriving between a
+// successful submit and this save would otherwise lose the only record that
+// the paid task exists, and the next retry would double-submit. The write is
+// local and fast; completing it under cancel is strictly safer than skipping.
 func (r *runner) saveMarker(ctx context.Context, hash string) {
+	ctx = context.WithoutCancel(ctx)
 	m := &state.Marker{
 		TaskID:       r.sid,
 		URL:          r.url,
@@ -626,12 +641,24 @@ func (r *runner) failOrCancel(ctx context.Context, f *failure) int {
 // exactly one template — the deliberate E9, which does not pass through here
 // (design.md §4.1).
 func (r *runner) say(text string) {
-	r.em.Assistant(r.sid, protocol.RedactPhrases(text, resumeRejectPhrase))
-	r.lastEmit = time.Now()
+	r.noteEmit(r.em.Assistant(r.sid, protocol.RedactPhrases(text, resumeRejectPhrase)))
 }
 
 func (r *runner) log(level, msg string) {
-	r.em.Log(r.sid, level, protocol.RedactPhrases(msg, resumeRejectPhrase))
+	r.noteEmit(r.em.Log(r.sid, level, protocol.RedactPhrases(msg, resumeRejectPhrase)))
+}
+
+// noteEmit feeds the keepalive window and converts a failed WRITE into
+// cancellation: stdout's only reader is the daemon, so a write error (EPIPE
+// after daemon death) means nobody will ever consume a result — polling on
+// for up to the full deadline would leave a zombie shim beside a paid run.
+// ErrAfterResult is not a write failure (it is the latch refusing a late
+// event) and never cancels.
+func (r *runner) noteEmit(err error) {
+	if err != nil && !errors.Is(err, protocol.ErrAfterResult) {
+		r.cancelRun()
+		return
+	}
 	r.lastEmit = time.Now()
 }
 
@@ -656,6 +683,32 @@ func readPromptGuarded(ctx context.Context, stdin io.Reader) (string, *failure) 
 			return "", failf(codeInput, "", "%v", out.err)
 		}
 		return out.text, nil
+	}
+}
+
+const (
+	scratchPrefix = "codex-cloud-shim-"
+	scratchMaxAge = 24 * time.Hour
+)
+
+// sweepStaleScratch best-effort removes scratch dirs older than scratchMaxAge
+// left by hard-killed prior runs. Age gates on the dir's own mtime so a
+// concurrent live shim's fresh scratch is never touched; every failure is
+// ignored (someone else's sweep, permissions, races are all fine).
+func sweepStaleScratch(tmpDir string, now time.Time) {
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), scratchPrefix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || now.Sub(info.ModTime()) < scratchMaxAge {
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(tmpDir, e.Name()))
 	}
 }
 

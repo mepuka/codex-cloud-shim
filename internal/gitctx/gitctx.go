@@ -11,7 +11,15 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
+
+// runWaitDelay bounds cmd.Wait after the context kills git: a git subcommand
+// can spawn children that inherit its pipes (`git push` spawns ssh, `git
+// commit` runs hooks), and without WaitDelay a killed git whose pipe a child
+// still holds blocks Wait forever — a permanent hang in exactly the
+// deadline-cancel path the kill was for.
+const runWaitDelay = 5 * time.Second
 
 // issueKeyRe is the tighter form from design.md §7.3 (C8): a key found in the
 // prompt is used verbatim, never guessed.
@@ -181,6 +189,7 @@ func CommitStaged(ctx context.Context, dir string, in CommitInput) (string, erro
 	}
 	cmd := exec.CommandContext(ctx, "git", "commit", "-F", "-")
 	cmd.Dir = dir
+	cmd.WaitDelay = runWaitDelay // commit runs hooks; see runWaitDelay
 	cmd.Stdin = strings.NewReader(msg)
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -210,10 +219,15 @@ func Push(ctx context.Context, dir string) error {
 	return nil
 }
 
-// git runs one git command with dir as CWD, stderr captured into the error.
-func git(ctx context.Context, dir string, args ...string) (string, error) {
+// Run executes one git command with dir as CWD and returns trimmed stdout;
+// stderr is captured into the error. The single git-exec path for every
+// package in this module: context-killable, WaitDelay-bounded (see
+// runWaitDelay). Exported so cloud, run and state share it instead of
+// growing divergent copies.
+func Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.WaitDelay = runWaitDelay
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
@@ -222,4 +236,9 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 			strings.TrimSpace(errBuf.String()))
 	}
 	return strings.TrimSpace(outBuf.String()), nil
+}
+
+// git is the package-internal alias for Run.
+func git(ctx context.Context, dir string, args ...string) (string, error) {
+	return Run(ctx, dir, args...)
 }
