@@ -170,8 +170,20 @@ func Run(ctx context.Context, cfg Config) int {
 // run is the post-stdin state machine; every subprocess call carries ctx.
 func (r *runner) run(ctx context.Context) int {
 	// PREFLIGHT (F2)
-	if _, err := exec.LookPath(r.s.codexBin); err != nil {
+	codexPath, err := exec.LookPath(r.s.codexBin)
+	if err != nil {
 		return r.failOrCancel(ctx, failf(codePreflight, "", "codex binary %q not found: %v", r.s.codexBin, err))
+	}
+	// A .cmd/.bat shim (npm's codex.cmd) is executed through cmd.exe, whose
+	// command line terminates at the first newline — the multi-line prompt
+	// silently truncates to line 1 and every cloud task returns an empty
+	// diff titled after that line. Measured 2026-08-03: five live runs
+	// truncated this way while the same prompt via the native exe landed
+	// +12/-0. Refuse loudly; there is no safe way to pass newlines to a
+	// batch shim.
+	if ext := strings.ToLower(filepath.Ext(codexPath)); ext == ".cmd" || ext == ".bat" {
+		return r.failOrCancel(ctx, failf(codePreflight, "",
+			"codex resolved to a batch shim (%s); cmd.exe truncates multi-line prompts at the first newline, so cloud submissions would silently lose the task body. Point --shim-codex-bin (or CODEX_CLOUD_SHIM_CODEX_BIN) at the native executable, e.g. the npm package's vendor codex.exe", codexPath))
 	}
 	if out, err := r.client.LoginStatus(ctx); err != nil {
 		return r.failOrCancel(ctx, failf(codePreflight, "", "codex login status failed: %v\n%s", err, out))

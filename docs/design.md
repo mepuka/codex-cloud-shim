@@ -106,7 +106,7 @@ malformed values → F0.
 | `--shim-deadline <dur>` | `30m` | overall wall-clock budget, launch → result |
 | `--shim-exec-timeout <dur>` | `120s` | budget for the exec subprocess (measured 3.4 s — probe/exec.time) |
 | `--shim-issue-key <KEY>` | extracted from prompt (§7.3) | commit-title suffix `(KEY)` |
-| `--shim-codex-bin <path>` | `codex` (env `CODEX_CLOUD_SHIM_CODEX_BIN`, flag wins) | the codex executable; the test seam |
+| `--shim-codex-bin <path>` | `codex` (env `CODEX_CLOUD_SHIM_CODEX_BIN`, flag wins) | the codex executable; the test seam. MUST resolve to a native executable, never npm's `codex.cmd`: a batch shim runs through cmd.exe, whose command line dies at the first newline, silently truncating the prompt to line 1 (measured 2026-08-03 — five live cloud runs returned empty diffs titled after the prompt's first line; the identical prompt through the vendor `codex.exe` landed +12/-0). PREFLIGHT fails F2 on a `.cmd`/`.bat` resolution. |
 | `--shim-list-pages <N>` | `5` | max cursor pages when hunting a task id in `list` |
 
 ---

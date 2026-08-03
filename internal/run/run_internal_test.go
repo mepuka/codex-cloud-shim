@@ -301,6 +301,22 @@ func TestIssueContextFetchesAndRenders(t *testing.T) {
 	}
 }
 
+func TestPreflightRefusesBatchShim(t *testing.T) {
+	// Any .cmd on PATH triggers the guard regardless of OS — the check is
+	// on the resolved extension, not on runtime GOOS.
+	binDir := t.TempDir()
+	cmdShim := filepath.Join(binDir, "codex.cmd")
+	if err := os.WriteFile(cmdShim, []byte("@echo off\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := &runner{s: &settings{codexBin: cmdShim}, em: protocol.NewEmitter(io.Discard),
+		cfg: Config{Getenv: func(string) string { return "" }}}
+	code := r.run(context.Background())
+	if code != ExitError {
+		t.Fatalf("want ExitError on batch shim, got %d", code)
+	}
+}
+
 func TestCloseOwnershipMovesToInReviewOnOwnershipOnly(t *testing.T) {
 	wd := t.TempDir()
 	writeTaskContext(t, wd, "d64774f1-709f-4dee-b3de-0856e46dfdd4")
