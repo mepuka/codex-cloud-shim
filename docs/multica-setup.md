@@ -31,8 +31,16 @@ State as wired on 2026-08-03, workspace `dev`.
    checkout with no argument). It resolves via the local codex login; when no
    env exists it prints the create link. A task fired against a repo with no
    env fails fast with the same guidance (F4a).
-3. **Attach the repo** to the Multica project (`--repo` on project create, or
-   the repositories tab) and assign issues to **Cloud Codex**.
+3. **Register the repo in the WORKSPACE registry** — `multica repo add
+   <https url>`. This is the step that makes the daemon clone a checkout into
+   task workdirs; a project-level `--repo` resource alone is metadata and the
+   task will fail E_GIT_CONTEXT "no checkout was found" without the registry
+   entry (measured on DEV-87, 2026-08-03). Then attach the repo to the
+   project and assign issues to **Cloud Codex**.
+4. **Trigger semantics** (measured): assignment at issue creation fires the
+   agent immediately; a failed run is re-fired by a comment MENTIONING the
+   agent (it replies threaded under the trigger); flipping the status column
+   re-fires nothing.
 
 That's it: tailtalk needs only step 1 (create its env) to start using cloud
 runs.

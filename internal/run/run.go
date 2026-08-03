@@ -97,16 +97,14 @@ func Run(ctx context.Context, cfg Config) int {
 		r.log("warn", w)
 	}
 
-	// WORKTREE DISCOVERY: Multica launches with CWD = the task workdir whose
-	// root holds the generated brief; the checkout sits one level below
-	// (measured; this shim's first in-platform run failed E_GIT_CONTEXT at
-	// the workdir root). Everything downstream — env slug, branch, apply,
-	// commit, push, the reconcile marker — keys off the discovered checkout.
-	if wt, rule, err := gitctx.DiscoverWorktree(ctx, cfg.Worktree); err != nil {
-		return r.fail(failf(codeGitContext, "", "%v", err))
-	} else if wt != cfg.Worktree {
-		r.cfg.Worktree = wt
-		r.log("info", fmt.Sprintf("worktree %s (rule: %s)", wt, rule))
+	// WORKTREE: discovery (CWD, or one checkout below — the Multica workdir
+	// layout), falling back once to the platform's own convention of running
+	// `multica repo checkout` from the workdir's resources sidecar (measured:
+	// the daemon never pre-clones; real agents run the checkout themselves).
+	// Everything downstream — env slug, branch, apply, commit, push, the
+	// reconcile marker — keys off the resolved checkout.
+	if f := r.ensureWorktree(ctx); f != nil {
+		return r.fail(f)
 	}
 
 	// A hard kill (Multica's SIGKILL escalation, Windows termination, the

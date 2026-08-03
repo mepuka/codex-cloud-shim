@@ -23,6 +23,11 @@ import (
 // deadline-cancel path the kill was for.
 const runWaitDelay = 5 * time.Second
 
+// ErrNoCheckout is DiscoverWorktree's zero-candidate verdict; the run layer
+// matches it to trigger the platform checkout convention (multica repo
+// checkout) exactly once.
+var ErrNoCheckout = errors.New("cwd is not a git repository and no checkout was found one level below")
+
 // issueKeyRe is the tighter form from design.md §7.3 (C8): a key found in the
 // prompt is used verbatim, never guessed.
 var issueKeyRe = regexp.MustCompile(`\b[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}\b`)
@@ -121,7 +126,7 @@ func DiscoverWorktree(ctx context.Context, cwd string) (dir, rule string, err er
 	case 1:
 		return filepath.Join(cwd, candidates[0]), "single checkout under the task workdir", nil
 	case 0:
-		return "", "", errors.New("cwd is not a git repository and no checkout was found one level below; launch in the checkout or fix the workdir")
+		return "", "", fmt.Errorf("%w; launch in the checkout or fix the workdir", ErrNoCheckout)
 	default:
 		return "", "", fmt.Errorf("cwd is not a git repository and %d checkouts sit below it (%s); ambiguous — refusing to guess",
 			len(candidates), strings.Join(candidates, ", "))
